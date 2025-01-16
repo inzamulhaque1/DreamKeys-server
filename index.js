@@ -119,6 +119,15 @@ async function run() {
             res.send({ role: user?.role || "user" });
         });
 
+        app.get('/users', async (req, res) => {
+            const email = req.query.email;
+            if (email) {
+              const user = await usersCollection.findOne({ email }); // Get a single user
+              return res.send(user || {});
+            }
+            res.status(400).send({ error: "Email is required" });
+          });
+
 
         app.patch('/users/:id/role', (req, res) => {
             const userId = req.params.id;
@@ -239,6 +248,10 @@ async function run() {
                 res.status(404).send({ message: 'Property not found' });
             }
         });
+
+        // ! WISHLIST
+
+       
 
 
 
