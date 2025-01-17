@@ -34,6 +34,8 @@ async function run() {
 
         const usersCollection = client.db("DreamKeys").collection("users")
         const propertiesCollection = client.db("DreamKeys").collection("properties");
+        const wishlistCollection = client.db("DreamKeys").collection("wishlist");
+
 
         // Jwt related apis
 
@@ -122,11 +124,11 @@ async function run() {
         app.get('/users', async (req, res) => {
             const email = req.query.email;
             if (email) {
-              const user = await usersCollection.findOne({ email }); // Get a single user
-              return res.send(user || {});
+                const user = await usersCollection.findOne({ email }); // Get a single user
+                return res.send(user || {});
             }
             res.status(400).send({ error: "Email is required" });
-          });
+        });
 
 
         app.patch('/users/:id/role', (req, res) => {
@@ -217,19 +219,19 @@ async function run() {
         });
 
         // Admin verifies property
-        app.patch('/properties/:id/verify', verifyToken,  async (req, res) => {
+        app.patch('/properties/:id/verify', verifyToken, async (req, res) => {
             const { id } = req.params;
             const { verificationStatus } = req.body;
-        
+
             if (!['verified', 'rejected'].includes(verificationStatus)) {
                 return res.status(400).send({ message: 'Invalid verification status' });
             }
-        
+
             const result = await propertiesCollection.updateOne(
                 { _id: new ObjectId(id) },
                 { $set: { verificationStatus } }
             );
-        
+
             if (result.modifiedCount > 0) {
                 res.send({ message: 'Property verification status updated' });
             } else {
@@ -251,7 +253,56 @@ async function run() {
 
         // ! WISHLIST
 
-       
+        // Add a property to the wishlist
+        app.post('/wishlist', verifyToken, async (req, res) => {
+            const { propertyId } = req.body;
+            const userEmail = req.decoded.email;
+
+            const property = await propertiesCollection.findOne({ _id: new ObjectId(propertyId) });
+            if (!property) {
+                return res.status(404).send({ message: 'Property not found' });
+            }
+
+            const wishlistItem = {
+                userEmail,
+                propertyId,
+                addedAt: new Date(),
+                ...property
+            };
+
+            const result = await wishlistCollection.insertOne(wishlistItem);
+            res.send({ message: 'Added to wishlist', result });
+        });
+
+        // Fetch all wishlist items for a user
+        app.get('/wishlist', verifyToken, async (req, res) => {
+            const userEmail = req.decoded.email;
+
+            const wishlistItems = await wishlistCollection
+                .find({ userEmail })
+                .toArray();
+
+            res.send(wishlistItems);
+        });
+
+        // Remove a property from the wishlist
+        app.delete('/wishlist/:id', verifyToken, async (req, res) => {
+            const { id } = req.params;
+            const userEmail = req.decoded.email;
+
+            const result = await wishlistCollection.deleteOne({
+                _id: new ObjectId(id),
+                userEmail
+            });
+
+            if (result.deletedCount > 0) {
+                res.send({ message: 'Removed from wishlist' });
+            } else {
+                res.status(404).send({ message: 'Wishlist item not found' });
+            }
+        });
+
+
 
 
 
