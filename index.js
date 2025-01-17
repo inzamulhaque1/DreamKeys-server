@@ -35,6 +35,7 @@ async function run() {
         const usersCollection = client.db("DreamKeys").collection("users")
         const propertiesCollection = client.db("DreamKeys").collection("properties");
         const wishlistCollection = client.db("DreamKeys").collection("wishlist");
+        const bidsCollection = client.db("DreamKeys").collection("bids");
 
 
         // Jwt related apis
@@ -49,7 +50,7 @@ async function run() {
 
         // middlewares
         const verifyToken = (req, res, next) => {
-            console.log('inside verify token', req.headers.authorization);
+            // console.log('inside verify token', req.headers.authorization);
             if (!req.headers.authorization) {
                 return res.status(401).send({ message: 'unauthorized access' })
             }
@@ -258,10 +259,9 @@ async function run() {
             const { propertyId } = req.body;
             const userEmail = req.decoded.email;
 
+            console.log(propertyId);
             const property = await propertiesCollection.findOne({ _id: new ObjectId(propertyId) });
-            if (!property) {
-                return res.status(404).send({ message: 'Property not found' });
-            }
+            delete property._id;
 
             const wishlistItem = {
                 userEmail,
@@ -269,6 +269,7 @@ async function run() {
                 addedAt: new Date(),
                 ...property
             };
+
 
             const result = await wishlistCollection.insertOne(wishlistItem);
             res.send({ message: 'Added to wishlist', result });
@@ -282,6 +283,17 @@ async function run() {
                 .find({ userEmail })
                 .toArray();
 
+            res.send(wishlistItems);
+        });
+
+        // Get a single wishlist by ID
+        app.get('/wishlist/:id',verifyToken, async (req, res) => {
+            const id = req.params.id
+            const userEmail = req.decoded.email;
+            const wishlistItems = await wishlistCollection.findOne({
+                _id: new ObjectId(id),
+                userEmail
+            })
             res.send(wishlistItems);
         });
 
@@ -302,13 +314,53 @@ async function run() {
             }
         });
 
+        // ! Bids
+
+        app.post('/bids', verifyToken, async (req, res) => {
+            const { propertyId, agentEmail, offerAmount , buyerName } = req.body;
+
+            const userEmail = req.decoded.email;
+            
+            const bidItem = {
+                propertyId, agentEmail, offerAmount , buyerName, buyerEmail: userEmail, status: 'pending'
+            };
+
+            const bid = await bidsCollection.insertOne(bidItem)
+            if (!bid) {
+                return res.status(404).send({ message: 'bid not found' });
+            }
+
+            res.send({ message: 'Bid Added Successfully', bid });
+        });
+
+
+        app.get('/bids/:email',verifyToken, async (req, res) => {
+            const email = req.params.email;
+            const bids = await bidsCollection.find({buyerEmail: email}).toArray()
+            const bidItems = await Promise.all(
+                bids.map(async (bid) => {
+                    const id = bid.propertyId;
+                    const wishlistItem = await wishlistCollection.findOne({ _id: new ObjectId(id) });
+                    return {
+                        ...wishlistItem,
+                        offerAmount: bid.offerAmount,
+                        offerStatus: bid.status
+                    }
+                }))
+
+            res.send(bidItems) 
+        });
+
+
+          
+
 
 
 
 
         // Send a ping to confirm a successful connection
         await client.db("admin").command({ ping: 1 });
-        console.log("Pinged your deployment. You successfully connected to MongoDB!");
+
     } finally {
         // Ensures that the client will close when you finish/error
         // await client.close();
