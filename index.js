@@ -15,8 +15,8 @@ app.get("/", (req, res) => {
 
 
 
-// const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.k3e8u.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.k3e8u.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
+// const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.k3e8u.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 // const uri = 'mongodb://localhost:27017';
 
 console.log(uri);
@@ -40,6 +40,7 @@ async function run() {
         const propertiesCollection = client.db("DreamKeys").collection("properties");
         const wishlistCollection = client.db("DreamKeys").collection("wishlist");
         const bidsCollection = client.db("DreamKeys").collection("bids");
+        const reviewsCollection = client.db("DreamKeys").collection("reviews");
 
 
         // Jwt related apis
@@ -207,6 +208,24 @@ async function run() {
                 });
             } else {
                 res.status(500).send({ message: 'Failed to add property' });
+            }
+        });
+
+
+        // Update property
+        app.patch('/properties/:id', verifyToken, async (req, res) => {
+            const { id } = req.params;
+            const updatedPropertyData = req.body;
+
+            const result = await propertiesCollection.updateOne(
+                { _id: new ObjectId(id) },
+                { $set: updatedPropertyData }
+            );
+
+            if (result.modifiedCount > 0) {
+                res.send({ message: 'Property updated successfully' });
+            } else {
+                res.status(404).send({ message: 'Property not found or no changes made' });
             }
         });
 
@@ -411,11 +430,81 @@ async function run() {
 
 
 
-        //   ! reviews
+        //! Submit a review
+        app.post('/reviews/:id', async (req, res) => {
+            try {
+                const { id } = req.params; // Property ID
+                const { text, userId, username, userPhoto, reviewStatus } = req.body;
 
-        
+                if (!text || !userId || !username || !userPhoto) {
+                    return res.status(400).json({ message: 'Missing review data' });
+                }
+
+                const review = {
+                    propertyId: id,
+                    text,
+                    userId,
+                    username,
+                    userPhoto,
+                    reviewStatus: 'pending', // Set default to 'pending'
+                    createdAt: new Date(),
+                };
+
+                await reviewsCollection.insertOne(review);
+                res.json({ message: 'Review submitted successfully' });
+            } catch (error) {
+                console.error('Error submitting review:', error);
+                res.status(500).json({ error: 'Internal Server Error' });
+            }
+        });
+
+        // Fetch all reviews
+        app.get('/reviews', async (req, res) => {
+            try {
+                const reviews = await reviewsCollection.find().toArray();
+                res.json(reviews);
+            } catch (error) {
+                console.error("Error fetching reviews:", error);
+                res.status(500).json({ error: "Internal Server Error" });
+            }
+        });
+
+        // Fetch all reviews for a specific property by ID
+        app.get('/reviews/:id', async (req, res) => {
+            const propertyId = req.params.id;
+
+            try {
+                const reviews = await reviewsCollection.find({ propertyId }).toArray();
+                res.json(reviews); // Send back the reviews for the given property ID
+            } catch (error) {
+                console.error('Error fetching reviews:', error);
+                res.status(500).json({ message: 'Error fetching reviews', error });
+            }
+        });
 
 
+        // Update review status
+        app.put('/reviews/:id', async (req, res) => {
+            const { id } = req.params;
+            const { reviewStatus } = req.body;
+
+            try {
+                // Update the review status directly using updateOne
+                const result = await reviewsCollection.updateOne(
+                    { _id: new ObjectId(id) },  // Match by ObjectId
+                    { $set: { reviewStatus } }  // Update the reviewStatus
+                );
+
+                if (result.matchedCount === 0) {
+                    return res.status(404).json({ message: 'Review not found' });
+                }
+
+                res.status(200).json({ message: 'Review status updated successfully' });
+            } catch (error) {
+                console.error("Error updating review status:", error);
+                res.status(500).json({ error: "Internal Server Error" });
+            }
+        });
 
 
 
