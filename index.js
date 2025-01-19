@@ -4,6 +4,7 @@ const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const jwt = require('jsonwebtoken')
 const app = express();
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY)
 
 // Middleware
 app.use(cors());
@@ -19,7 +20,7 @@ const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster
 // const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.k3e8u.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 // const uri = 'mongodb://localhost:27017';
 
-console.log(uri);
+
 
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
@@ -87,7 +88,7 @@ async function run() {
         const verifyAdmin = async (req, res, next) => {
             const email = req.decoded.email
             const query = { email: email }
-            const user = await userCollection.findOne(query)
+            const user = await usersCollection.findOne(query)
             const isAdmin = user?.role === 'admin'
             if (!isAdmin) {
                 return res.status(403).send({ message: 'forbidden access' })
@@ -104,7 +105,7 @@ async function run() {
             res.send(result)
         })
 
-        app.post('/users', async (req, res) => {
+        app.post('/users',verifyToken, async (req, res) => {
             const user = req.body;
             user.role = user.role || "user";
 
@@ -143,7 +144,6 @@ async function run() {
             const email = req.query.email;
             if (email) {
                 const user = await usersCollection.findOne({ email }); // Get a single user
-                console.log(user)
                 return res.send(user || {});
             }
             res.status(400).send({ error: "Email is required" });
@@ -172,7 +172,7 @@ async function run() {
         });
 
 
-        app.delete('/users/:id', (req, res) => {
+        app.delete('/users/:id',verifyToken,verifyAdmin, (req, res) => {
             const userId = req.params.id;
 
             const filter = { _id: new ObjectId(userId) }; // Use ObjectId
@@ -186,6 +186,46 @@ async function run() {
                     }
                 });
         });
+        app.patch('/users/:userId/fraud', async (req, res) => {
+            const { userId } = req.params;
+          
+            if (!ObjectId.isValid(userId)) {
+              return res.status(400).send({ message: 'Invalid user ID.' });
+            }
+          
+            try {
+              const result = await usersCollection.updateOne(
+                { _id: new ObjectId(userId) },
+                { $set: { isFraud: true } }
+              );
+              if (result.modifiedCount > 0) {
+                res.status(200).send({ message: 'User marked as fraud successfully.' });
+              } else {
+                res.status(404).send({ message: 'User not found.' });
+              }
+            } catch (error) {
+              console.error('Error:', error);
+              res.status(500).send({ message: 'Internal server error.', error });
+            }
+          });
+          
+
+          app.delete('/properties/agent/:userId', async (req, res) => {
+            const { userId } = req.params;
+        
+            const result = await propertiesCollection.deleteMany({ agentId: userId }); // Adjust field based on your schema
+            if (result.deletedCount > 0) {
+                res.send({ message: 'Agent properties deleted successfully' });
+            } else {
+                res.status(404).send({ message: 'No properties found for the given agent' });
+            }
+        });
+
+
+        
+        
+
+        
 
 
         // ! Property ! //
@@ -215,20 +255,26 @@ async function run() {
         // Update property
         app.patch('/properties/:id', verifyToken, async (req, res) => {
             const { id } = req.params;
-            const updatedPropertyData = req.body;
+            let updatedPropertyData = req.body;
 
-            const result = await propertiesCollection.updateOne(
-                { _id: new ObjectId(id) },
-                { $set: updatedPropertyData }
-            );
+            // Exclude the _id field from the update data if it exists
+            delete updatedPropertyData._id;
 
-            if (result.modifiedCount > 0) {
-                res.send({ message: 'Property updated successfully' });
-            } else {
-                res.status(404).send({ message: 'Property not found or no changes made' });
+            try {
+                const result = await propertiesCollection.updateOne(
+                    { _id: new ObjectId(id) },
+                    { $set: updatedPropertyData }
+                );
+
+                if (result.modifiedCount > 0) {
+                    res.send({ message: 'Property updated successfully' });
+                } else {
+                    res.status(404).send({ message: 'Property not found or no changes made' });
+                }
+            } catch (error) {
+                res.status(500).send({ message: 'Error updating property', error });
             }
         });
-
 
         // Get all properties (filter by agentEmail if provided)
         app.get('/properties', async (req, res) => {
@@ -295,7 +341,6 @@ async function run() {
             const { propertyId } = req.body;
             const userEmail = req.decoded.email;
 
-            console.log(propertyId);
             const property = await propertiesCollection.findOne({ _id: new ObjectId(propertyId) });
             delete property._id;
 
@@ -353,12 +398,12 @@ async function run() {
         // ! Bids
 
         app.post('/bids', verifyToken, async (req, res) => {
-            const { propertyId, agentEmail, offerAmount, buyerName } = req.body;
+            const { propertyId, agentEmail, offerAmount, buyerName,buyingDate } = req.body;
 
             const userEmail = req.decoded.email;
 
             const bidItem = {
-                propertyId, agentEmail, offerAmount, buyerName, buyerEmail: userEmail, status: 'pending'
+                propertyId, agentEmail, offerAmount,buyingDate, buyerName, buyerEmail: userEmail, status: 'pending'
             };
 
             const bid = await bidsCollection.insertOne(bidItem)
@@ -382,7 +427,9 @@ async function run() {
                         offerAmount: bid.offerAmount,
                         offerStatus: bid.status,
                         _id: new ObjectId(bid._id),
-                        propertyId: bid.propertyId
+                        propertyId: bid.propertyId,
+                        
+                        
                     }
                 }))
 
@@ -403,7 +450,11 @@ async function run() {
                         offerAmount: bid.offerAmount,
                         offerStatus: bid.status,
                         _id: new ObjectId(bid._id),
-                        propertyId: bid.propertyId
+                        propertyId: bid.propertyId,
+                        buyingDate: bid.buyingDate,
+                        buyerName: bid.buyerName,
+                        buyerEmail: bid.buyerEmail,
+                        
                     };
                 })
             );
@@ -453,7 +504,7 @@ async function run() {
                 await reviewsCollection.insertOne(review);
                 res.json({ message: 'Review submitted successfully' });
             } catch (error) {
-                console.error('Error submitting review:', error);
+               
                 res.status(500).json({ error: 'Internal Server Error' });
             }
         });
@@ -464,7 +515,7 @@ async function run() {
                 const reviews = await reviewsCollection.find().toArray();
                 res.json(reviews);
             } catch (error) {
-                console.error("Error fetching reviews:", error);
+                
                 res.status(500).json({ error: "Internal Server Error" });
             }
         });
@@ -505,6 +556,132 @@ async function run() {
                 res.status(500).json({ error: "Internal Server Error" });
             }
         });
+
+        // Fetch all reviews by a specific user
+app.get('/reviews/user/:userId', async (req, res) => {
+    const userId = req.params.userId;
+  
+    try {
+      const reviews = await reviewsCollection.find({ userId }).toArray();
+      res.json(reviews); // Send back the reviews for the specific user
+    } catch (error) {
+      console.error('Error fetching user reviews:', error);
+      res.status(500).json({ message: 'Error fetching user reviews', error });
+    }
+  });
+  
+
+  // Delete a review by reviewId
+app.delete('/reviews/:reviewId', async (req, res) => {
+    const { reviewId } = req.params; // Review ID
+
+    try {
+        // Delete the review using the reviewId
+        const result = await reviewsCollection.deleteOne({ _id: new ObjectId(reviewId) });
+
+        if (result.deletedCount === 0) {
+            return res.status(404).json({ message: 'Review not found' });
+        }
+
+        // Return success response if the review is deleted
+        res.status(200).json({ message: 'Review deleted successfully' });
+    } catch (error) {
+        console.error('Error deleting review:', error);
+        res.status(500).json({ message: 'Internal Server Error', error });
+    }
+});
+
+// Delete a review by reviewId
+app.delete('/reviews/:reviewId', async (req, res) => {
+    const { reviewId } = req.params; // Review ID
+
+    try {
+        // Delete the review using the reviewId
+        const result = await reviewsCollection.deleteOne({ _id: new ObjectId(reviewId) });
+
+        if (result.deletedCount === 0) {
+            return res.status(404).json({ message: 'Review not found' });
+        }
+
+        // Return success response if the review is deleted
+        res.status(200).json({ message: 'Review deleted successfully' });
+    } catch (error) {
+        console.error('Error deleting review:', error);
+        res.status(500).json({ message: 'Internal Server Error', error });
+    }
+});
+
+// Fetch latest 3 reviews for a specific property
+app.get('/reviews/:id', async (req, res) => {
+    const propertyId = req.params.id;
+
+    try {
+        const reviews = await reviewsCollection
+            .find({ propertyId })
+            .sort({ createdAt: -1 }) // Sort by createdAt in descending order
+            .limit(3) // Limit to the latest 3 reviews
+            .toArray();
+        res.json(reviews);
+    } catch (error) {
+        console.error('Error fetching reviews:', error);
+        res.status(500).json({ message: 'Error fetching reviews', error });
+    }
+});
+
+
+
+
+// ! Payment
+
+app.post("/create-checkout-session", async (req, res) => {
+  const { amount } = req.body;
+
+  try {
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+      line_items: [
+        {
+          price_data: {
+            currency: "usd",
+            product_data: {
+              name: "Property Purchase",
+            },
+            unit_amount: amount * 100, // Amount in cents
+          },
+          quantity: 1,
+        },
+      ],
+      mode: "payment",
+      success_url: `${YOUR_FRONTEND_URL}/payment-success`,
+      cancel_url: `${YOUR_FRONTEND_URL}/payment-cancel`,
+    });
+
+    res.json({ sessionId: session.id });
+  } catch (error) {
+    console.error("Error creating Stripe session:", error);
+    res.status(500).send("Internal Server Error");
+  }
+});
+
+
+app.post("/update-bid-status", async (req, res) => {
+    const { bidId, transactionId } = req.body;
+  
+    try {
+      await BidModel.updateOne(
+        { _id: bidId },
+        { $set: { status: "bought", transactionId } }
+      );
+      res.send("Status updated successfully");
+    } catch (error) {
+      console.error("Error updating status:", error);
+      res.status(500).send("Internal Server Error");
+    }
+  });
+  
+
+
+
 
 
 
