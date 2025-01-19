@@ -1,5 +1,5 @@
-require("dotenv").config();
 const express = require("express");
+require("dotenv").config();
 const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const jwt = require('jsonwebtoken')
@@ -15,8 +15,12 @@ app.get("/", (req, res) => {
 
 
 
-
+// const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.k3e8u.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.k3e8u.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
+// const uri = 'mongodb://localhost:27017';
+
+console.log(uri);
+
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
@@ -47,6 +51,18 @@ async function run() {
             })
             res.send({ token })
         })
+
+
+        // app.post('/jwt', async (req, res) => {
+        //     const user = req.body
+        //     const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1h' })
+        //     res
+        //         .cookie('token', token, {
+        //             httpOnly: true,
+        //             secure: process.env.NODE_ENV==='production',
+        //         })
+        //         .send({ success: true })
+        // })
 
         // middlewares
         const verifyToken = (req, res, next) => {
@@ -126,6 +142,7 @@ async function run() {
             const email = req.query.email;
             if (email) {
                 const user = await usersCollection.findOne({ email }); // Get a single user
+                console.log(user)
                 return res.send(user || {});
             }
             res.status(400).send({ error: "Email is required" });
@@ -287,7 +304,7 @@ async function run() {
         });
 
         // Get a single wishlist by ID
-        app.get('/wishlist/:id',verifyToken, async (req, res) => {
+        app.get('/wishlist/:id', verifyToken, async (req, res) => {
             const id = req.params.id
             const userEmail = req.decoded.email;
             const wishlistItems = await wishlistCollection.findOne({
@@ -317,12 +334,12 @@ async function run() {
         // ! Bids
 
         app.post('/bids', verifyToken, async (req, res) => {
-            const { propertyId, agentEmail, offerAmount , buyerName } = req.body;
+            const { propertyId, agentEmail, offerAmount, buyerName } = req.body;
 
             const userEmail = req.decoded.email;
-            
+
             const bidItem = {
-                propertyId, agentEmail, offerAmount , buyerName, buyerEmail: userEmail, status: 'pending'
+                propertyId, agentEmail, offerAmount, buyerName, buyerEmail: userEmail, status: 'pending'
             };
 
             const bid = await bidsCollection.insertOne(bidItem)
@@ -334,32 +351,82 @@ async function run() {
         });
 
 
-        app.get('/bids/:email',verifyToken, async (req, res) => {
+        app.get('/bids/:email', async (req, res) => {
             const email = req.params.email;
-            const bids = await bidsCollection.find({buyerEmail: email}).toArray()
+            const bids = await bidsCollection.find({ buyerEmail: email }).toArray()
             const bidItems = await Promise.all(
                 bids.map(async (bid) => {
                     const id = bid.propertyId;
-                    const wishlistItem = await wishlistCollection.findOne({ _id: new ObjectId(id) });
+                    const propertyItem = await propertiesCollection.findOne({ _id: new ObjectId(id) });
                     return {
-                        ...wishlistItem,
+                        ...propertyItem,
                         offerAmount: bid.offerAmount,
-                        offerStatus: bid.status
+                        offerStatus: bid.status,
+                        _id: new ObjectId(bid._id),
+                        propertyId: bid.propertyId
                     }
                 }))
 
-            res.send(bidItems) 
+            res.send(bidItems)
         });
 
 
-          
+        app.get('/agentBids/:email', verifyToken, async (req, res) => {
+            const email = req.params.email;
+            const bids = await bidsCollection.find({ agentEmail: email }).toArray();
+
+            const bidItems = await Promise.all(
+                bids.map(async (bid) => {
+                    const id = bid.propertyId;
+                    const propertyItem = await propertiesCollection.findOne({ _id: new ObjectId(id) });
+                    return {
+                        ...propertyItem,
+                        offerAmount: bid.offerAmount,
+                        offerStatus: bid.status,
+                        _id: new ObjectId(bid._id),
+                        propertyId: bid.propertyId
+                    };
+                })
+            );
+
+            res.send(bidItems);
+        });
+
+
+        app.patch('/bids/:id', verifyToken, async (req, res) => {
+            const { id } = req.params;
+            const { status } = req.body;
+
+            const updatedBid = await bidsCollection.updateOne(
+                { _id: new ObjectId(id) },
+                { $set: { status } }
+            );
+
+            if (updatedBid.modifiedCount === 0) {
+                return res.status(404).send({ message: 'Bid not found or already updated' });
+            }
+
+            res.send({ message: 'Bid status updated successfully', updatedBid });
+        });
+
+
+
+        //   ! reviews
+
+        
 
 
 
 
 
+
+
+
+
+
+        // await client.db("admin").command({ ping: 1 });
+        console.log("Pinged your deployment. You successfully connected to MongoDB!");
         // Send a ping to confirm a successful connection
-        await client.db("admin").command({ ping: 1 });
 
     } finally {
         // Ensures that the client will close when you finish/error
