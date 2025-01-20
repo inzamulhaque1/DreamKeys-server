@@ -107,7 +107,7 @@ async function run() {
             res.send(result)
         })
 
-        app.post('/users', verifyToken, async (req, res) => {
+        app.post('/users', async (req, res) => {
             const user = req.body;
             user.role = user.role || "user";
 
@@ -139,7 +139,9 @@ async function run() {
         app.get('/users/role', async (req, res) => {
             const email = req.query.email; // Assuming email is sent as a query parameter
             const user = await usersCollection.findOne({ email });
+            console.log(user);
             res.send({ role: user?.role || "user" });
+            
         });
 
         app.get('/users', async (req, res) => {
@@ -379,6 +381,30 @@ async function run() {
         });
 
 
+        // Report a property
+app.post('/properties/:id/report', async (req, res) => {
+    const { id } = req.params;
+    const { reporterName, reporterEmail, reportDescription } = req.body;
+
+    const reportData = {
+        propertyId: new ObjectId(id),
+        reporterName,
+        reporterEmail,
+        reportDescription,
+    };
+
+    try {
+        const result = await reportedPropertiesCollection.insertOne(reportData);
+        res.send({ message: 'Property reported successfully', reportId: result.insertedId });
+    } catch (error) {
+        res.status(500).send({ message: 'Failed to report property', error });
+    }
+});
+
+
+
+
+
 
 
 
@@ -446,12 +472,12 @@ async function run() {
         // ! Bids
 
         app.post('/bids', verifyToken, async (req, res) => {
-            const { propertyId, agentEmail, offerAmount, buyerName, buyingDate } = req.body;
+            const { propertyId,propertyTitle, agentEmail, offerAmount, buyerName, buyingDate } = req.body;
 
             const userEmail = req.decoded.email;
 
             const bidItem = {
-                propertyId, agentEmail, offerAmount, buyingDate, buyerName, buyerEmail: userEmail, status: 'pending'
+                propertyId, propertyTitle, agentEmail, offerAmount, buyingDate, buyerName, buyerEmail: userEmail, status: 'pending'
             };
 
             const bid = await bidsCollection.insertOne(bidItem)
