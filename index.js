@@ -380,6 +380,8 @@ async function run() {
 
 
 
+
+
         // ! WISHLIST
 
         // Add a property to the wishlist
@@ -481,6 +483,11 @@ async function run() {
 
             res.send(bidItems)
         });
+        app.get('/get-bid/:id', async (req, res) => {
+            const id = req.params.id
+            const bids = await bidsCollection.findOne({ _id: new ObjectId(id) })
+            res.send(bids);
+        });
 
 
         app.get('/agentBids/:email', verifyToken, async (req, res) => {
@@ -512,10 +519,11 @@ async function run() {
         app.patch('/bids/:id', verifyToken, async (req, res) => {
             const { id } = req.params;
             const { status } = req.body;
+    
 
             const updatedBid = await bidsCollection.updateOne(
                 { _id: new ObjectId(id) },
-                { $set: { status } }
+                { $set: {  status } }
             );
 
             if (updatedBid.modifiedCount === 0) {
@@ -729,6 +737,7 @@ async function run() {
 
     app.post("/create-payment-intent", async (req, res) => {
       const { price } = req.body
+
       const amount = parseInt(price * 100)
 
       const paymentIntent = await stripe.paymentIntents.create({
@@ -747,20 +756,20 @@ async function run() {
       const paymentResult = await paymentCollection.insertOne(payment)
 
       // carefully delete each card from the cart
-      console.log('payment info', payment);
-      const query = {
-        _id: {
-          $in: payment.cartIds.map(id => new ObjectId(id))
-        }
-      }
+    //   console.log('payment info', payment);
+    //   const query = {
+    //     _id: {
+    //       $in: payment.cartIds.map(id => new ObjectId(id))
+    //     }
+    //   }
 
-      const deleteResult = await cartCollection.deleteMany(query)
+    //   const deleteResult = await cartCollection.deleteMany(query)
 
-      res.send({ paymentResult, deleteResult })
+    //   res.send({ paymentResult, deleteResult })
 
     })
 
-    app.get('/payments/:email',  async (req, res) => {
+    app.get('/payments/:email', verifyToken, async (req, res) => {
       const query = { email: req.params.email }
       if (req.params.email !== req.decoded.email) {
         return res.status(403).send({ massage: 'forbidden access' })
@@ -774,6 +783,19 @@ async function run() {
 
 
 
+    app.get("/payments", async (req, res) => {
+        const { agentEmail } = req.query;
+      
+        try {
+          const query = agentEmail ? { agentEmail } : {};
+          const payments = await paymentCollection.find(query).toArray();
+          res.send(payments);
+        } catch (error) {
+          console.error("Error fetching payments:", error);
+          res.status(500).send("Internal Server Error");
+        }
+      });
+      
 
 
 
