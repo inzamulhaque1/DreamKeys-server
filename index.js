@@ -42,6 +42,8 @@ async function run() {
         const wishlistCollection = client.db("DreamKeys").collection("wishlist");
         const bidsCollection = client.db("DreamKeys").collection("bids");
         const reviewsCollection = client.db("DreamKeys").collection("reviews");
+        const paymentCollection = client.db("DreamKeys").collection("payment");
+        
 
 
         // Jwt related apis
@@ -105,7 +107,7 @@ async function run() {
             res.send(result)
         })
 
-        app.post('/users',verifyToken, async (req, res) => {
+        app.post('/users', verifyToken, async (req, res) => {
             const user = req.body;
             user.role = user.role || "user";
 
@@ -172,7 +174,7 @@ async function run() {
         });
 
 
-        app.delete('/users/:id',verifyToken,verifyAdmin, (req, res) => {
+        app.delete('/users/:id', verifyToken, verifyAdmin, (req, res) => {
             const userId = req.params.id;
 
             const filter = { _id: new ObjectId(userId) }; // Use ObjectId
@@ -188,31 +190,31 @@ async function run() {
         });
         app.patch('/users/:userId/fraud', async (req, res) => {
             const { userId } = req.params;
-          
-            if (!ObjectId.isValid(userId)) {
-              return res.status(400).send({ message: 'Invalid user ID.' });
-            }
-          
-            try {
-              const result = await usersCollection.updateOne(
-                { _id: new ObjectId(userId) },
-                { $set: { isFraud: true } }
-              );
-              if (result.modifiedCount > 0) {
-                res.status(200).send({ message: 'User marked as fraud successfully.' });
-              } else {
-                res.status(404).send({ message: 'User not found.' });
-              }
-            } catch (error) {
-              console.error('Error:', error);
-              res.status(500).send({ message: 'Internal server error.', error });
-            }
-          });
-          
 
-          app.delete('/properties/agent/:userId', async (req, res) => {
+            if (!ObjectId.isValid(userId)) {
+                return res.status(400).send({ message: 'Invalid user ID.' });
+            }
+
+            try {
+                const result = await usersCollection.updateOne(
+                    { _id: new ObjectId(userId) },
+                    { $set: { isFraud: true } }
+                );
+                if (result.modifiedCount > 0) {
+                    res.status(200).send({ message: 'User marked as fraud successfully.' });
+                } else {
+                    res.status(404).send({ message: 'User not found.' });
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                res.status(500).send({ message: 'Internal server error.', error });
+            }
+        });
+
+
+        app.delete('/properties/agent/:userId', async (req, res) => {
             const { userId } = req.params;
-        
+
             const result = await propertiesCollection.deleteMany({ agentId: userId }); // Adjust field based on your schema
             if (result.deletedCount > 0) {
                 res.send({ message: 'Agent properties deleted successfully' });
@@ -222,10 +224,10 @@ async function run() {
         });
 
 
-        
-        
 
-        
+
+
+
 
 
         // ! Property ! //
@@ -334,6 +336,50 @@ async function run() {
             }
         });
 
+        // Update property to be advertised
+        app.patch('/properties/:id/advertise', verifyToken, async (req, res) => {
+            const { id } = req.params;
+        
+            const result = await propertiesCollection.updateOne(
+                { _id: new ObjectId(id) },
+                { 
+                    $set: { 
+                        isAdvertised: true, 
+                        updatedAt: new Date() 
+                    } 
+                }
+            );
+        
+            if (result.modifiedCount > 0) {
+                res.send({ message: 'Property advertised successfully' });
+            } else {
+                res.status(404).send({ message: 'Property not found or already advertised' });
+            }
+        });
+        
+
+        // Remove property from being advertised
+        app.patch('/properties/:id/remove-advertise', verifyToken, async (req, res) => {
+            const { id } = req.params;
+
+            try {
+                const result = await propertiesCollection.updateOne(
+                    { _id: new ObjectId(id) },
+                    { $set: { isAdvertised: false } }
+                );
+
+                if (result.modifiedCount > 0) {
+                    res.send({ message: 'Property advertisement removed successfully' });
+                } else {
+                    res.status(404).send({ message: 'Property not found or not advertised' });
+                }
+            } catch (error) {
+                res.status(500).send({ message: 'Error removing advertisement', error });
+            }
+        });
+
+
+
         // ! WISHLIST
 
         // Add a property to the wishlist
@@ -398,12 +444,12 @@ async function run() {
         // ! Bids
 
         app.post('/bids', verifyToken, async (req, res) => {
-            const { propertyId, agentEmail, offerAmount, buyerName,buyingDate } = req.body;
+            const { propertyId, agentEmail, offerAmount, buyerName, buyingDate } = req.body;
 
             const userEmail = req.decoded.email;
 
             const bidItem = {
-                propertyId, agentEmail, offerAmount,buyingDate, buyerName, buyerEmail: userEmail, status: 'pending'
+                propertyId, agentEmail, offerAmount, buyingDate, buyerName, buyerEmail: userEmail, status: 'pending'
             };
 
             const bid = await bidsCollection.insertOne(bidItem)
@@ -428,8 +474,8 @@ async function run() {
                         offerStatus: bid.status,
                         _id: new ObjectId(bid._id),
                         propertyId: bid.propertyId,
-                        
-                        
+
+
                     }
                 }))
 
@@ -454,7 +500,7 @@ async function run() {
                         buyingDate: bid.buyingDate,
                         buyerName: bid.buyerName,
                         buyerEmail: bid.buyerEmail,
-                        
+
                     };
                 })
             );
@@ -504,7 +550,7 @@ async function run() {
                 await reviewsCollection.insertOne(review);
                 res.json({ message: 'Review submitted successfully' });
             } catch (error) {
-               
+
                 res.status(500).json({ error: 'Internal Server Error' });
             }
         });
@@ -515,7 +561,7 @@ async function run() {
                 const reviews = await reviewsCollection.find().toArray();
                 res.json(reviews);
             } catch (error) {
-                
+
                 res.status(500).json({ error: "Internal Server Error" });
             }
         });
@@ -558,127 +604,170 @@ async function run() {
         });
 
         // Fetch all reviews by a specific user
-app.get('/reviews/user/:userId', async (req, res) => {
-    const userId = req.params.userId;
-  
-    try {
-      const reviews = await reviewsCollection.find({ userId }).toArray();
-      res.json(reviews); // Send back the reviews for the specific user
-    } catch (error) {
-      console.error('Error fetching user reviews:', error);
-      res.status(500).json({ message: 'Error fetching user reviews', error });
-    }
-  });
-  
+        app.get('/reviews/user/:userId', async (req, res) => {
+            const userId = req.params.userId;
 
-  // Delete a review by reviewId
-app.delete('/reviews/:reviewId', async (req, res) => {
-    const { reviewId } = req.params; // Review ID
+            try {
+                const reviews = await reviewsCollection.find({ userId }).toArray();
+                res.json(reviews); // Send back the reviews for the specific user
+            } catch (error) {
+                console.error('Error fetching user reviews:', error);
+                res.status(500).json({ message: 'Error fetching user reviews', error });
+            }
+        });
 
-    try {
-        // Delete the review using the reviewId
-        const result = await reviewsCollection.deleteOne({ _id: new ObjectId(reviewId) });
 
-        if (result.deletedCount === 0) {
-            return res.status(404).json({ message: 'Review not found' });
+        // Delete a review by reviewId
+        app.delete('/reviews/:reviewId', async (req, res) => {
+            const { reviewId } = req.params; // Review ID
+
+            try {
+                // Delete the review using the reviewId
+                const result = await reviewsCollection.deleteOne({ _id: new ObjectId(reviewId) });
+
+                if (result.deletedCount === 0) {
+                    return res.status(404).json({ message: 'Review not found' });
+                }
+
+                // Return success response if the review is deleted
+                res.status(200).json({ message: 'Review deleted successfully' });
+            } catch (error) {
+                console.error('Error deleting review:', error);
+                res.status(500).json({ message: 'Internal Server Error', error });
+            }
+        });
+
+        // Delete a review by reviewId
+        app.delete('/reviews/:reviewId', async (req, res) => {
+            const { reviewId } = req.params; // Review ID
+
+            try {
+                // Delete the review using the reviewId
+                const result = await reviewsCollection.deleteOne({ _id: new ObjectId(reviewId) });
+
+                if (result.deletedCount === 0) {
+                    return res.status(404).json({ message: 'Review not found' });
+                }
+
+                // Return success response if the review is deleted
+                res.status(200).json({ message: 'Review deleted successfully' });
+            } catch (error) {
+                console.error('Error deleting review:', error);
+                res.status(500).json({ message: 'Internal Server Error', error });
+            }
+        });
+
+        // Fetch latest 3 reviews for a specific property
+        app.get('/reviews/:id', async (req, res) => {
+            const propertyId = req.params.id;
+
+            try {
+                const reviews = await reviewsCollection
+                    .find({ propertyId })
+                    .sort({ createdAt: -1 }) // Sort by createdAt in descending order
+                    .limit(3) // Limit to the latest 3 reviews
+                    .toArray();
+                res.json(reviews);
+            } catch (error) {
+                console.error('Error fetching reviews:', error);
+                res.status(500).json({ message: 'Error fetching reviews', error });
+            }
+        });
+
+
+
+
+        // ! Payment
+
+        app.post("/create-checkout-session", async (req, res) => {
+            const { amount } = req.body;
+
+            try {
+                const session = await stripe.checkout.sessions.create({
+                    payment_method_types: ["card"],
+                    line_items: [
+                        {
+                            price_data: {
+                                currency: "usd",
+                                product_data: {
+                                    name: "Property Purchase",
+                                },
+                                unit_amount: amount * 100, // Amount in cents
+                            },
+                            quantity: 1,
+                        },
+                    ],
+                    mode: "payment",
+                    success_url: `${YOUR_FRONTEND_URL}/payment-success`,
+                    cancel_url: `${YOUR_FRONTEND_URL}/payment-cancel`,
+                });
+
+                res.json({ sessionId: session.id });
+            } catch (error) {
+                console.error("Error creating Stripe session:", error);
+                res.status(500).send("Internal Server Error");
+            }
+        });
+
+
+        app.post("/update-bid-status", async (req, res) => {
+            const { bidId, transactionId } = req.body;
+
+            try {
+                await BidModel.updateOne(
+                    { _id: bidId },
+                    { $set: { status: "bought", transactionId } }
+                );
+                res.send("Status updated successfully");
+            } catch (error) {
+                console.error("Error updating status:", error);
+                res.status(500).send("Internal Server Error");
+            }
+        });
+
+// ! PAyment Intend // Payment intend
+
+    app.post("/create-payment-intent", async (req, res) => {
+      const { price } = req.body
+      const amount = parseInt(price * 100)
+
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: amount,
+        currency: 'usd',
+        payment_method_types: ['card']
+      });
+
+      res.send({
+        clientSecret: paymentIntent.client_secret
+      })
+    })
+
+    app.post('/payments', async (req, res) => {
+      const payment = req.body
+      const paymentResult = await paymentCollection.insertOne(payment)
+
+      // carefully delete each card from the cart
+      console.log('payment info', payment);
+      const query = {
+        _id: {
+          $in: payment.cartIds.map(id => new ObjectId(id))
         }
+      }
 
-        // Return success response if the review is deleted
-        res.status(200).json({ message: 'Review deleted successfully' });
-    } catch (error) {
-        console.error('Error deleting review:', error);
-        res.status(500).json({ message: 'Internal Server Error', error });
-    }
-});
+      const deleteResult = await cartCollection.deleteMany(query)
 
-// Delete a review by reviewId
-app.delete('/reviews/:reviewId', async (req, res) => {
-    const { reviewId } = req.params; // Review ID
+      res.send({ paymentResult, deleteResult })
 
-    try {
-        // Delete the review using the reviewId
-        const result = await reviewsCollection.deleteOne({ _id: new ObjectId(reviewId) });
+    })
 
-        if (result.deletedCount === 0) {
-            return res.status(404).json({ message: 'Review not found' });
-        }
-
-        // Return success response if the review is deleted
-        res.status(200).json({ message: 'Review deleted successfully' });
-    } catch (error) {
-        console.error('Error deleting review:', error);
-        res.status(500).json({ message: 'Internal Server Error', error });
-    }
-});
-
-// Fetch latest 3 reviews for a specific property
-app.get('/reviews/:id', async (req, res) => {
-    const propertyId = req.params.id;
-
-    try {
-        const reviews = await reviewsCollection
-            .find({ propertyId })
-            .sort({ createdAt: -1 }) // Sort by createdAt in descending order
-            .limit(3) // Limit to the latest 3 reviews
-            .toArray();
-        res.json(reviews);
-    } catch (error) {
-        console.error('Error fetching reviews:', error);
-        res.status(500).json({ message: 'Error fetching reviews', error });
-    }
-});
-
-
-
-
-// ! Payment
-
-app.post("/create-checkout-session", async (req, res) => {
-  const { amount } = req.body;
-
-  try {
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ["card"],
-      line_items: [
-        {
-          price_data: {
-            currency: "usd",
-            product_data: {
-              name: "Property Purchase",
-            },
-            unit_amount: amount * 100, // Amount in cents
-          },
-          quantity: 1,
-        },
-      ],
-      mode: "payment",
-      success_url: `${YOUR_FRONTEND_URL}/payment-success`,
-      cancel_url: `${YOUR_FRONTEND_URL}/payment-cancel`,
-    });
-
-    res.json({ sessionId: session.id });
-  } catch (error) {
-    console.error("Error creating Stripe session:", error);
-    res.status(500).send("Internal Server Error");
-  }
-});
-
-
-app.post("/update-bid-status", async (req, res) => {
-    const { bidId, transactionId } = req.body;
-  
-    try {
-      await BidModel.updateOne(
-        { _id: bidId },
-        { $set: { status: "bought", transactionId } }
-      );
-      res.send("Status updated successfully");
-    } catch (error) {
-      console.error("Error updating status:", error);
-      res.status(500).send("Internal Server Error");
-    }
-  });
-  
+    app.get('/payments/:email',  async (req, res) => {
+      const query = { email: req.params.email }
+      if (req.params.email !== req.decoded.email) {
+        return res.status(403).send({ massage: 'forbidden access' })
+      }
+      const result = await paymentCollection.find(query).toArray()
+      res.send(result)
+    })
 
 
 
