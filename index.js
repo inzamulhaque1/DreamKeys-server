@@ -409,6 +409,10 @@ app.post('/properties/:id/report', async (req, res) => {
 
 
         // ! WISHLIST
+        app.get('/wishlists', async (req, res) => {
+            const result = await wishlistCollection.find().toArray()
+            res.send(result)
+        })
 
         // Add a property to the wishlist
         app.post('/wishlist', verifyToken, async (req, res) => {
@@ -470,6 +474,11 @@ app.post('/properties/:id/report', async (req, res) => {
         });
 
         // ! Bids
+
+        app.get('/bidss', async (req, res) => {
+            const result = await bidsCollection.find().toArray()
+            res.send(result)
+        })
 
         app.post('/bids', verifyToken, async (req, res) => {
             const { propertyId,propertyTitle, agentEmail, offerAmount, buyerName, buyingDate } = req.body;
@@ -802,6 +811,11 @@ app.post('/properties/:id/report', async (req, res) => {
       }
       const result = await paymentCollection.find(query).toArray()
       res.send(result)
+    })
+
+    app.get('/paymentss', async (req, res) => {
+        const result = await paymentCollection.find().toArray()
+        res.send(result)
     })
 
 
